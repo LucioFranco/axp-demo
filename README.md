@@ -58,3 +58,7 @@ axp local run .axp/experiment.yaml \
   --file demo-cli=./target/release/demo-cli \
   --managed-model-access
 ```
+
+## Try a run
+
+Comment `/axp run` on a PR to evaluate the agent against the freshly built `demo-cli`.
