@@ -1,0 +1,74 @@
+# yaml-language-server: $schema=https://docs.514.ai/schema/experiment.v2.schema.yaml
+#
+# PR-trigger demo experiment.
+#
+# This experiment is linked to this repo in the AXP platform (Settings → GitHub)
+# by its repo-relative path. When someone comments `/axp run` on a PR, AXP reads
+# this file at the PR head commit and runs it.
+#
+# The product under test is `demo-cli`, a tiny compiled binary built by this
+# repo. It enters the sandbox through the source-less `files:` slot named
+# `demo-cli`: CI builds the binary and ships it with
+#   axp ci upload demo-cli ./target/release/demo-cli
+# which stages it at the slot's `dest` (bin/demo-cli) for the PR head commit.
+schema_version: 2
+id: axp-demo-cli
+name: "Use the compiled demo-cli to hash a string"
+description: |
+  Stages the PR's freshly built demo-cli binary into /workspace, asks the agent
+  to use it to hash a fixed string, and verifies the answer matches the binary's
+  real output — so a correct result is evidence the agent actually ran the
+  compiled product, not that it guessed.
+
+agents:
+  - name: claude
+    model: claude-sonnet-4-6
+
+prompts:
+  - id: hash-string
+    prompt: |
+      A compiled CLI is staged at /workspace/bin/demo-cli.
+
+      Use it to compute the hash of the exact string `axp-pr-trigger`
+      (run `/workspace/bin/demo-cli hash axp-pr-trigger`).
+
+      Write ONLY the resulting hash — no extra text, no surrounding quotes,
+      a single trailing newline is fine — to /workspace/answer.txt.
+
+# Source-less slot: no `source:`, so it is bound at run time. CI fills it via
+# `axp ci upload demo-cli <path>`; locally bind it with
+# `axp local run --file demo-cli=./target/release/demo-cli`.
+files:
+  - name: demo-cli
+    dest: bin/demo-cli
+
+environments:
+  - name: workspace
+    # Staging happens before setup, so the binary is already here. Make sure it
+    # is executable and prove it runs.
+    setup: |
+      chmod +x /workspace/bin/demo-cli
+      /workspace/bin/demo-cli version
+
+tests:
+  application:
+    - name: answer-exists
+      script: |
+        [ -s /workspace/answer.txt ]
+    - name: answer-matches-cli
+      # The expected value is whatever the staged binary actually prints, so the
+      # test stays correct no matter what the digest is.
+      script: |
+        expected="$(/workspace/bin/demo-cli hash axp-pr-trigger)"
+        actual="$(tr -d '[:space:]' < /workspace/answer.txt)"
+        [ "$actual" = "$expected" ]
+  introspection:
+    - name: agent-ran-the-cli
+      # The agent should have actually invoked demo-cli — look for it in the trace.
+      script: |
+        grep -q "demo-cli" "$AXP_TRACE_PATH"
+
+limits:
+  max_turns: 15
+  max_time_seconds: 300
+  max_cost_usd: 0.50
