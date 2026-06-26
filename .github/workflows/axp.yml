@@ -35,5 +35,6 @@ jobs:
           AXP_API_KEY: ${{ secrets.AXP_API_KEY }}
         run: |
           axp ci upload demo-cli ./target/release/demo-cli \
+            --org "${{ vars.AXP_ORG_ID }}" \
             --repo "${{ github.repository }}" \
             --commit "${{ github.event.pull_request.head.sha }}"
