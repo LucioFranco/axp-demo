@@ -1,0 +1,39 @@
+name: axp
+
+# Build the demo CLI and ship it to AXP for every PR commit, so that when
+# someone comments `/axp run` on the PR, the artifact for that exact head commit
+# is already waiting in the artifact registry (the trigger rendezvouses on it).
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+# One upload per PR; cancel a superseded build when new commits land.
+concurrency:
+  group: axp-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  upload-artifact:
+    runs-on: ubuntu-latest
+    steps:
+      # Check out the PR head commit (not the synthetic merge ref) so the binary
+      # — and the commit we key the upload to — match what `/axp run` resolves.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Build demo-cli (release)
+        run: cargo build --release --locked
+
+      - name: Install axp CLI
+        run: |
+          bash <(curl -fsSL https://dl.514.ai/install.sh) axp
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Upload demo-cli artifact to AXP
+        env:
+          AXP_API_KEY: ${{ secrets.AXP_API_KEY }}
+        run: |
+          axp ci upload demo-cli ./target/release/demo-cli \
+            --repo "${{ github.repository }}" \
+            --commit "${{ github.event.pull_request.head.sha }}"
